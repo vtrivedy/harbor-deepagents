@@ -22,10 +22,8 @@ This repo provides a **DeepAgent harness** - a complete agent implementation bui
 
 Run your agent in multiple execution environments:
 
-- 🐳 **Docker** (local) - Fast iteration on your machine
-- ☁️ **Modal** - Serverless cloud execution with auto-scaling
-- 🌐 **Daytona** - Cloud development environments
-- 📦 **E2B** - Code interpreter sandboxes
+- 🐳 **Docker** (local)
+- ☁️ **Modal, Daytona, E2B** - Cloud sandboxes
 
 ## Quick Start
 
