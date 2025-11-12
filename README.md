@@ -31,7 +31,7 @@ Run your agent in multiple execution environments:
 
 ```bash
 # Clone or download this repo
-git clone <repo-url>
+git clone https://github.com/vtrivedy/harbor-deepagents
 cd harbor-deepagents
 
 # Create virtual environment
