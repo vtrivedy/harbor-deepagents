@@ -30,6 +30,7 @@ uv sync --no-editable
 uv tool install harbor
 
 # Rebuild the harness wheel after making code changes
+##IMPORTANT: run again if the tbench run errors, working on a cleaner fix for custom harnesses
 uv sync --no-editable
 ```
 

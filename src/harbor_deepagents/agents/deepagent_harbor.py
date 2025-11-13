@@ -1,6 +1,7 @@
 """Harbor agent implementation using LangChain DeepAgents."""
 
 import json
+import os
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -11,8 +12,7 @@ from deepagents.backends import FilesystemBackend
 from langchain_anthropic import ChatAnthropic
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import BaseMessage
-from langchain_core.callbacks import BaseCallbackHandler
-from langchain_core.outputs import LLMResult
+from langsmith import Client
 from pydantic import BaseModel
 
 from harbor.agents.base import BaseAgent
@@ -32,24 +32,6 @@ from harbor.models.trajectories import (
 from .harbor_tools import create_harbor_environment_tools
 from .langsmith_integration import send_harbor_feedback
 from .prompts import HARBOR_SYSTEM_PROMPT
-
-
-class RunIDCaptureCallback(BaseCallbackHandler):
-    """Callback handler to capture LangSmith run_id during execution."""
-
-    def __init__(self):
-        super().__init__()
-        self.run_id: Optional[str] = None
-
-    def on_chain_start(self, serialized, inputs, **kwargs):
-        """Capture run_id when the chain starts."""
-        if "run_id" in kwargs and kwargs["run_id"]:
-            self.run_id = str(kwargs["run_id"])
-
-    def on_llm_start(self, serialized, prompts, **kwargs):
-        """Capture run_id when LLM starts."""
-        if "run_id" in kwargs and kwargs["run_id"]:
-            self.run_id = str(kwargs["run_id"])
 
 
 class DeepAgentHarbor(BaseAgent):
@@ -185,10 +167,7 @@ class DeepAgentHarbor(BaseAgent):
         )
 
         try:
-            # Create callback to capture LangSmith run_id
-            run_id_callback = RunIDCaptureCallback()
-
-            # Invoke deep agent with LangSmith tracing and callback
+            # Invoke deep agent with LangSmith tracing
             result = await deep_agent.ainvoke(
                 {"messages": [{"role": "user", "content": instruction}]},
                 config={
@@ -200,18 +179,32 @@ class DeepAgentHarbor(BaseAgent):
                         "session_id": self._session_id,
                     },
                     "recursion_limit": self._max_iterations,
-                    "callbacks": [run_id_callback],
                 },
             )
 
             # Store task name for feedback
             self._task_name = instruction[:100]  # Truncate for readability
 
-            # Use captured run_id from callback, fallback to session_id
-            self._langsmith_run_id = run_id_callback.run_id or self._session_id
-
-            if self._verbose and run_id_callback.run_id:
-                print(f"✓ Captured LangSmith run_id: {run_id_callback.run_id}")
+            # Query LangSmith to get the run_id by searching for our unique run_name
+            self._langsmith_run_id = self._session_id  # Default fallback
+            if os.getenv("LANGCHAIN_TRACING_V2"):
+                try:
+                    client = Client()
+                    project_name = os.getenv("LANGCHAIN_PROJECT", "default")
+                    run_name = f"harbor-deepagent-{self._session_id[:8]}"
+                    # Search by exact run_name which is unique
+                    runs = list(client.list_runs(
+                        project_name=project_name,
+                        filter=f'eq(name, "{run_name}")',
+                        limit=1,
+                    ))
+                    if runs:
+                        self._langsmith_run_id = str(runs[0].id)
+                        if self._verbose:
+                            print(f"✓ Found LangSmith run_id: {self._langsmith_run_id}")
+                except Exception as e:
+                    if self._verbose:
+                        print(f"Warning: Could not query LangSmith run_id: {e}")
 
             # Extract messages from result
             messages = result.get("messages", [])
