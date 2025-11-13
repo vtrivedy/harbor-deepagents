@@ -270,15 +270,21 @@ def maybe_send_feedback_from_latest_trial() -> None:
     except Exception:
         return
 
-    run_id = trajectory.get("session_id")
+    # Get run_id from trajectory (captured during execution via callback)
+    run_id = trajectory.get("agent", {}).get("extra", {}).get("langsmith_run_id")
+    if not run_id:
+        # Fallback to session_id if run_id wasn't captured
+        run_id = trajectory.get("session_id")
+        if not run_id:
+            return
+
     reward = (
         trial_result.get("verifier_result", {})
         .get("rewards", {})
         .get("reward")
     )
-    if not run_id or reward is None:
+    if reward is None:
         return
-    run_id = resolve_langsmith_run_id(run_id)
 
     task_name = trial_result.get("task_name") or trial_dir.name
     cost_usd = trial_result.get("agent_result", {}).get("cost_usd")
@@ -295,28 +301,6 @@ def maybe_send_feedback_from_latest_trial() -> None:
         console.print("[green]✓ Sent LangSmith feedback[/]")
     except Exception as exc:
         console.print(f"[yellow]Warning: failed to send LangSmith feedback: {exc}[/]")
-
-
-def resolve_langsmith_run_id(session_id: str) -> str:
-    """Map our session_id to the actual LangSmith run ID, if available."""
-
-    if not os.getenv("LANGCHAIN_TRACING_V2"):
-        return session_id
-
-    project_name = os.getenv("LANGCHAIN_PROJECT")
-    try:
-        client = Client()
-        runs = client.list_runs(
-            project_name=project_name,
-            execution_order="desc",
-            filter={"metadata.session_id": {"$eq": session_id}},
-        )
-        first = next(iter(runs), None)
-        if first:
-            return str(first.id)
-    except Exception as exc:
-        console.print(f"[yellow]Warning: unable to resolve LangSmith run id: {exc}[/]")
-    return session_id
 
 
 if __name__ == "__main__":
