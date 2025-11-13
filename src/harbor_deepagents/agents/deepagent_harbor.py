@@ -54,6 +54,7 @@ class DeepAgentHarbor(BaseAgent):
         max_iterations: int = 50,
         temperature: float = 0.0,
         verbose: bool = True,
+        system_prompt: str | None = None,
         *args,
         **kwargs,
     ):
@@ -69,6 +70,7 @@ class DeepAgentHarbor(BaseAgent):
         self._verbose = verbose
         self._session_id = str(uuid.uuid4())
         self._environment: BaseEnvironment | None = None
+        self._system_prompt = system_prompt or HARBOR_SYSTEM_PROMPT
 
         # Initialize LLM based on provider prefix (LangSmith will trace if LANGCHAIN_TRACING_V2=true)
         if model_name.startswith("openai/") or model_name.startswith("gpt-"):
@@ -117,7 +119,7 @@ class DeepAgentHarbor(BaseAgent):
         # Add system step to trajectory
         self._add_step(
             source="system",
-            message=HARBOR_SYSTEM_PROMPT,
+            message=self._system_prompt,
         )
 
     async def run(
@@ -162,7 +164,7 @@ class DeepAgentHarbor(BaseAgent):
         deep_agent = create_deep_agent(
             model=self._llm,
             tools=[bash_tool],  # Only bash from Harbor
-            system_prompt=HARBOR_SYSTEM_PROMPT,
+            system_prompt=self._system_prompt,
             backend=filesystem_backend,  # Real filesystem backend
         )
 

@@ -26,13 +26,14 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 git clone https://github.com/vtrivedy/harbor-deepagents
 cd harbor-deepagents
 uv python install 3.12
-uv sync --no-editable
+uv sync && uv pip install -e .
 uv tool install harbor
-
-# IMPORTANT: Rebuild after making code changes
-# Run this again if Terminal Bench errors (working on a cleaner fix for custom harnesses)
-uv sync --no-editable
 ```
+
+Editable installs are the default, so your changes under `src/` are live as soon
+as you save them. Whenever you rebuild `.venv` (e.g., re-running `uv sync` after lock changes),
+repeat `uv sync && uv pip install -e .` to reinstall the package before running a task. Run
+`uv build` if you need a wheel/tarball for distribution.
 
 ### 2. Configuration
 
@@ -40,9 +41,9 @@ Create a `.env` file with your API keys:
 
 ```bash
 # Required: Model provider API key
-OPENAI_API_KEY=sk-proj-...                      # For GPT models
+OPENAI_API_KEY=sk-proj-...                     
 # OR
-ANTHROPIC_API_KEY=sk-ant-...                    # For Claude models
+ANTHROPIC_API_KEY=sk-ant-...                   
 
 # Optional: LangSmith tracing (recommended)
 LANGCHAIN_TRACING_V2=true
@@ -51,21 +52,21 @@ LANGCHAIN_PROJECT=...
 
 # Optional: Cloud sandbox providers
 # NOTE: Sandbox environments may have issues with downloading uv, python, container definition
-DAYTONA_API_KEY=dtn_...                         # Daytona
-modal setup                                     # Modal
+DAYTONA_API_KEY=dtn_...                        
+modal setup                                    
 ```
 
-### 3. Run Your First Task
+### 3. Run Your First Sample Task
 
 ```bash
-# Run the web-scraper demo task
+# Run the web-scraper demo task (configs/job.yaml)
 uv run harness --model openai/gpt-5-mini
 
-# Or use MODEL_NAME from .env
+# Or rely on MODEL_NAME from .env
 uv run harness
 
-# View results
-cat jobs/*/result.json | jq '.reward_stats.mean'
+# View Harbor results
+cat jobs/<auto-job-name>/result.json | jq '.reward_stats.mean'
 ```
 
 ### 4. Run Terminal Bench 2.0
@@ -77,8 +78,7 @@ uv run tb-docker --task prove-plus-comm --model openai/gpt-5-mini
 # Full benchmark suite
 uv run tb-docker --model openai/gpt-5-mini
 
-# Cloud sandboxes (Daytona/Modal)
-# NOTE: Sandbox environments may have issues with downloading uv, python, container definition
+# Daytona cloud sandbox (requires DAYTONA_API_KEY)
 uv run tb-daytona --task prove-plus-comm --model anthropic/claude-sonnet-4-5-20250620
 ```
 
@@ -138,11 +138,16 @@ View traces at https://smith.langchain.com - Harbor reward scores are automatica
 
 ## Customizing Your Agent
 
-**System Prompt:** Edit [src/harbor_deepagents/agents/prompts.py](src/harbor_deepagents/agents/prompts.py)
+**System Prompt:** Edit [src/harbor_deepagents/agents/prompts.py](src/harbor_deepagents/agents/prompts.py).
 
-**Model:** Edit `model_name` in config files (e.g., [configs/job.yaml](configs/job.yaml))
+**Model:** Update `model_name` inside [configs/job.yaml](configs/job.yaml) (or any Harbor config).
 - OpenAI: `openai/gpt-5-mini`, `openai/gpt-4o`
 - Anthropic: `anthropic/claude-sonnet-4-5-20250929`
+
+**Drop-in custom agent:**
+1. Start from [src/harbor_deepagents/agents/custom_agent.py](src/harbor_deepagents/agents/custom_agent.py). It subclasses `DeepAgentHarbor` but lets you swap prompts or override methods without touching the base harness.
+2. Point your Harbor config at `harbor_deepagents.agents.custom_agent:CustomDeepAgent`. The stock [configs/job.yaml](configs/job.yaml) includes comments showing where to flip the `import_path`.
+3. Iterate entirely in-source: run `uv run harness --config configs/job.yaml --dry-run` to verify Harbor resolves the agent, then drop `--dry-run` to execute tasks. LangSmith tracing keeps working so long as your `.env` provides the usual keys.
 
 ## Creating Custom Tasks
 

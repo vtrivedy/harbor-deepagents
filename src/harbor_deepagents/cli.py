@@ -194,7 +194,11 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
     if extra_args:
         command.extend(extra_args)
 
-    console.print(f"[cyan]Running Harbor job {command[command.index('--job-name') + 1]}[/]")
+    job_name = extract_job_name(command)
+    if job_name:
+        console.print(f"[cyan]Running Harbor job {job_name}[/]")
+    else:
+        console.print("[cyan]Running Harbor job[/]")
 
     if args.dry_run:
         console.print("[yellow]Dry run enabled; skipping execution.[/]")
@@ -202,7 +206,7 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
 
     try:
         subprocess.run(command, check=True)
-        maybe_send_feedback_from_latest_trial()
+        send_feedback_for_job(job_name)
     except subprocess.CalledProcessError as exc:
         console.print(f"[red]Harbor exited with code {exc.returncode}[/]")
         sys.exit(exc.returncode)
@@ -242,65 +246,82 @@ def _slugify(value: str) -> str:
     return "".join(ch.lower() if ch.isalnum() else "-" for ch in value).strip("-")
 
 
-def maybe_send_feedback_from_latest_trial() -> None:
-    """Best-effort LangSmith feedback push using the most recent job artifacts."""
+def send_feedback_for_job(job_name: Optional[str]) -> None:
+    """Push LangSmith feedback for every trial under jobs/<job_name>."""
 
-    jobs_dir = Path("jobs")
-    if not jobs_dir.exists():
+    if not job_name:
         return
 
-    trajectory_files = sorted(
-        jobs_dir.glob("*/**/agent/trajectory.json"),
-        key=lambda path: path.stat().st_mtime,
-        reverse=True,
-    )
+    job_dir = Path("jobs") / job_name
+    if not job_dir.exists():
+        return
+
+    trajectory_files = sorted(job_dir.glob("**/agent/trajectory.json"))
     if not trajectory_files:
         return
 
-    trajectory_path = trajectory_files[0]
-    trial_dir = trajectory_path.parent.parent
-    result_path = trial_dir / "result.json"
+    sent_count = 0
+    total_trials = len(trajectory_files)
 
-    if not result_path.exists():
-        return
+    for trajectory_path in trajectory_files:
+        trial_dir = trajectory_path.parent.parent
+        result_path = trial_dir / "result.json"
 
-    try:
-        trajectory = json.loads(trajectory_path.read_text())
-        trial_result = json.loads(result_path.read_text())
-    except Exception:
-        return
+        if not result_path.exists():
+            continue
 
-    # Get run_id from trajectory (captured during execution via callback)
-    run_id = trajectory.get("agent", {}).get("extra", {}).get("langsmith_run_id")
-    if not run_id:
-        # Fallback to session_id if run_id wasn't captured
-        run_id = trajectory.get("session_id")
-        if not run_id:
-            return
+        try:
+            trajectory = json.loads(trajectory_path.read_text())
+            trial_result = json.loads(result_path.read_text())
+        except Exception:
+            continue
 
-    reward = (
-        trial_result.get("verifier_result", {})
-        .get("rewards", {})
-        .get("reward")
-    )
-    if reward is None:
-        return
-
-    task_name = trial_result.get("task_name") or trial_dir.name
-    cost_usd = trial_result.get("agent_result", {}).get("cost_usd")
-    total_steps = len(trajectory.get("steps", []))
-
-    try:
-        send_harbor_feedback(
-            run_id=run_id,
-            task_name=task_name,
-            reward=reward,
-            agent_cost_usd=cost_usd,
-            total_steps=total_steps,
+        run_id = trajectory.get("agent", {}).get("extra", {}).get("langsmith_run_id") or (
+            trajectory.get("session_id")
         )
-        console.print("[green]✓ Sent LangSmith feedback[/]")
-    except Exception as exc:
-        console.print(f"[yellow]Warning: failed to send LangSmith feedback: {exc}[/]")
+        if not run_id:
+            continue
+
+        reward = (
+            trial_result.get("verifier_result", {})
+            .get("rewards", {})
+            .get("reward")
+        )
+        if reward is None:
+            continue
+
+        task_name = trial_result.get("task_name") or trial_dir.name
+        cost_usd = trial_result.get("agent_result", {}).get("cost_usd")
+        total_steps = len(trajectory.get("steps", []))
+
+        try:
+            send_harbor_feedback(
+                run_id=run_id,
+                task_name=task_name,
+                reward=reward,
+                agent_cost_usd=cost_usd,
+                total_steps=total_steps,
+            )
+            sent_count += 1
+        except Exception as exc:
+            console.print(
+                f"[yellow]Warning: failed to send LangSmith feedback for {trial_dir.name}: {exc}[/]"
+            )
+
+    if sent_count:
+        console.print(
+            f"[green]✓ Sent LangSmith feedback for {sent_count}/{total_trials} trial(s) in {job_dir.name}[/]"
+        )
+
+
+def extract_job_name(command: List[str]) -> Optional[str]:
+    """Extract --job-name value from the constructed Harbor command."""
+
+    if "--job-name" in command:
+        idx = command.index("--job-name")
+        if idx + 1 < len(command):
+            return command[idx + 1]
+    return None
 
 
 if __name__ == "__main__":

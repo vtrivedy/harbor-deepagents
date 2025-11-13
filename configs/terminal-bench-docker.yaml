@@ -24,11 +24,11 @@ agents:
       temperature: 0.0
       verbose: true
 
-n_attempts: 1
+n_attempts: 2
 
 orchestrator:
   type: local
-  n_concurrent_trials: 1  # Start with 1 for testing, increase for batch runs
+  n_concurrent_trials: 2  # run trials simultaenously, beware of local resource consumption
   quiet: false
   retry:
     max_retries: 0
