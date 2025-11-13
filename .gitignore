@@ -69,3 +69,5 @@ htmlcov/
 blog/
 .env
 .env.example
+
+temp-terminal-bench/

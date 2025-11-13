@@ -30,17 +30,15 @@ Run your agent in multiple execution environments:
 ### 1. Installation
 
 ```bash
-# Clone or download this repo
+curl -LsSf https://astral.sh/uv/install.sh | sh
 git clone https://github.com/vtrivedy/harbor-deepagents
 cd harbor-deepagents
+uv python install 3.12
+uv sync --no-editable
+uv tool install harbor
 
-# Create virtual environment
-python3.12 -m venv .venv-standard
-source .venv-standard/bin/activate
-
-# Install the deepagents harness
-pip install -e .
-
+# Rebuild the harness wheel after making code changes
+uv sync --no-editable
 ```
 
 ### 2. Example Configuration
@@ -64,9 +62,14 @@ DAYTONA_API_KEY=dtn_...
 
 ### 3. Run Your First Task
 
+Make sure `harbor` is on your `PATH` (e.g., via `uv tool install harbor`) before running these commands.
+
 ```bash
-# Run the web-scraper demo task
-harbor run --config configs/job.yaml
+# Run the web-scraper demo task with OpenAI
+uv run harness --model openai/gpt-5-mini
+
+# (Optional) Same command but read MODEL_NAME + API keys from .env
+uv run harness
 
 # Results are saved to jobs/
 ls jobs/deepagents-web-scraper/
@@ -75,8 +78,34 @@ ls jobs/deepagents-web-scraper/
 cat jobs/deepagents-web-scraper/result.json | jq '.reward_stats.mean'
 ```
 
+### 4. Run Terminal Bench 2.0 (single task or full suite)
 
-### 4. View Traces in LangSmith
+```bash
+# Run a single task locally in Docker
+uv run tb-docker --task prove-plus-comm --model openai/gpt-5-mini
+
+# Switch to Anthropic on Daytona
+uv run tb-daytona --task prove-plus-comm --model anthropic/claude-sonnet-4-5-20250620
+
+# Omit --task to process the full benchmark dataset
+uv run tb-docker --model openai/gpt-5-mini
+```
+
+Each run auto-generates a Harbor `--job-name` in the format `<config>-<task>-<model>-<timestamp>`, so every invocation gets its own folder under `jobs/`. Pass `--job-name my-run` if you want to set it manually.
+
+Prefer using `uv run` for convenience, but the raw Harbor command from the docs also works (example for Terminal Bench):
+
+```bash
+harbor run -d "terminal-bench@2.0" \
+  -m "openai/gpt-5-mini" \
+  -a "harbor_deepagents.agents.deepagent_harbor:DeepAgentHarbor" \
+  -e daytona \
+  -n 1 \
+  --task-name prove-plus-comm
+```
+
+
+### 5. View Traces in LangSmith
 
 If you enabled LangSmith tracing:
 1. Visit https://smith.langchain.com

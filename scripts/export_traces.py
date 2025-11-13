@@ -21,7 +21,7 @@ def main():
 
     if not jobs_dir.exists():
         print("✗ No jobs directory found. Run a job first!")
-        print("  → bash scripts/run_local.sh")
+        print("  → uv run harness --model openai/gpt-5-mini")
         return 1
 
     # Find most recent job
